@@ -1,0 +1,33 @@
+# 编辑器配置
+.vscode/
+.idea/
+
+# 依赖
+node_modules/
+target/
+
+# 构建输出
+dist/
+dist-ssr/
+src-tauri/target/
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.swp
+*.swo
+*~
