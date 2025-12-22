@@ -23,7 +23,7 @@
       },
       "fs": {
         "all": false,
-        "writeBinaryFile": true,
+        "writeFile": true,
         "scope": ["$DOWNLOAD/*", "$DOCUMENT/*", "$DESKTOP/*", "$HOME/*"]
       },
       "window": {

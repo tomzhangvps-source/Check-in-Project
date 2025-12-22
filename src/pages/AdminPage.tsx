@@ -5,12 +5,9 @@ import { Card } from '../components/common/Card';
 import { Modal } from '../components/common/Modal';
 import { Input } from '../components/common/Input';
 import { Pagination } from '../components/common/Pagination';
-import { X, Plus, RefreshCw, Download, FileText } from 'lucide-react';
+import { X, Plus, RefreshCw, Copy, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { User, ActionType, TimeRule, CheckIn } from '../types';
-import * as XLSX from 'xlsx';
-import { save } from '@tauri-apps/api/dialog';
-import { writeBinaryFile } from '@tauri-apps/api/fs';
 
 interface AdminPageProps {
   isOpen: boolean;
@@ -446,75 +443,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     toast.success('报表已下载');
   };
 
-  const exportExcel = async () => {
+  const copyReport = () => {
     try {
-      const reportData = generateMonthlyReport();
+      const text = `📊 考勤统计报表\n统计月份: ${reportMonth}\n统计时间: ${checkInFilters.startDate} 至 ${checkInFilters.endDate}\n\n` +
+        generateMonthlyReport().map((data, idx) => 
+          `${idx + 1}. ${data.name}\n   出勤天数: ${data.workDays} 天\n   总工作时长: 0 小时 0 分钟\n   迟到次数: ${data.lateCount} 次\n   早退次数: 0 次\n   旷工次数: 0 次`
+        ).join('\n\n');
       
-      // 准备 Excel 数据
-      const excelData = reportData.map((data, idx) => ({
-        '序号': idx + 1,
-        '姓名': data.name,
-        '出勤天数': data.workDays,
-        '准时次数': data.onTimeCount,
-        '迟到次数': data.lateCount,
-        '早退次数': 0,
-        '旷工次数': 0,
-        '总工作时长': '0小时0分钟'
-      }));
-
-      // 创建工作簿
-      const ws = XLSX.utils.json_to_sheet(excelData);
-      
-      // 设置列宽
-      ws['!cols'] = [
-        { wch: 6 },  // 序号
-        { wch: 12 }, // 姓名
-        { wch: 12 }, // 出勤天数
-        { wch: 12 }, // 准时次数
-        { wch: 12 }, // 迟到次数
-        { wch: 12 }, // 早退次数
-        { wch: 12 }, // 旷工次数
-        { wch: 16 }, // 总工作时长
-      ];
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '考勤统计');
-
-      // 添加汇总页
-      const summaryData = [
-        { '项目': '统计月份', '内容': reportMonth },
-        { '项目': '统计日期', '内容': `${checkInFilters.startDate} 至 ${checkInFilters.endDate}` },
-        { '项目': '统计人数', '内容': `${reportData.length} 人` },
-        { '项目': '总出勤天数', '内容': `${reportData.reduce((sum, d) => sum + d.workDays, 0)} 天` },
-        { '项目': '总迟到次数', '内容': `${reportData.reduce((sum, d) => sum + d.lateCount, 0)} 次` },
-        { '项目': '导出时间', '内容': new Date().toLocaleString('zh-CN') },
-      ];
-      const ws_summary = XLSX.utils.json_to_sheet(summaryData);
-      ws_summary['!cols'] = [{ wch: 15 }, { wch: 30 }];
-      XLSX.utils.book_append_sheet(wb, ws_summary, '报表概要');
-
-      // 生成二进制数据
-      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-
-      // 使用 Tauri 的保存对话框
-      const filePath = await save({
-        defaultPath: `考勤报表_${reportMonth}.xlsx`,
-        filters: [{
-          name: 'Excel 文件',
-          extensions: ['xlsx']
-        }]
-      });
-
-      if (filePath) {
-        // 保存文件
-        await writeBinaryFile(filePath, new Uint8Array(wbout));
-        toast.success('Excel 导出成功！');
-      } else {
-        toast.error('已取消导出');
-      }
+      navigator.clipboard.writeText(text);
+      toast.success('报表已复制到剪贴板！');
     } catch (error: any) {
-      console.error('Excel导出失败:', error);
-      toast.error('Excel 导出失败: ' + (error.message || error));
+      console.error('复制失败:', error);
+      toast.error('复制失败: ' + (error.message || error));
     }
   };
 
@@ -1046,10 +986,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                 <Button 
                   variant="secondary" 
                   size="sm" 
-                  onClick={exportExcel}
+                  onClick={copyReport}
                 >
-                  <Download size={16} />
-                  <span>导出Excel</span>
+                  <Copy size={16} />
+                  <span>复制报表</span>
                 </Button>
               </div>
 

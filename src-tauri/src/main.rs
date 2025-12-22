@@ -72,16 +72,11 @@ fn create_menu() -> Menu {
 }
 
 fn main() {
-    // Load environment variables from .env file
-    dotenvy::dotenv().ok();
+    // Use environment variables embedded at compile time
+    let supabase_url = env!("SUPABASE_URL");
+    let supabase_key = env!("SUPABASE_KEY");
     
-    // Initialize Supabase client
-    let supabase_url = std::env::var("SUPABASE_URL")
-        .expect("SUPABASE_URL must be set in .env file");
-    let supabase_key = std::env::var("SUPABASE_KEY")
-        .expect("SUPABASE_KEY must be set in .env file");
-    
-    let db = SupabaseClient::new(supabase_url, supabase_key);
+    let db = SupabaseClient::new(supabase_url.to_string(), supabase_key.to_string());
 
     // 创建中文菜单
     let menu = create_menu();
