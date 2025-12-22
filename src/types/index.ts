@@ -75,3 +75,11 @@ export interface CheckInStatistics {
   total_work_minutes: number;
   average_work_minutes: number;
 }
+
+export interface PaginatedCheckIns {
+  data: CheckIn[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}

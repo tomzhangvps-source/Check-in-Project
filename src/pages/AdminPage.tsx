@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { adminAPI, statisticsAPI, checkinAPI } from '../services/api';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
 import { Modal } from '../components/common/Modal';
 import { Input } from '../components/common/Input';
+import { Pagination } from '../components/common/Pagination';
 import { X, Plus, RefreshCw, Download, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { User, ActionType, TimeRule, CheckIn } from '../types';
@@ -45,8 +46,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     max_duration_minutes: 15,
   });
 
-  // Check-ins
+  // Check-ins with pagination
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+  const [paginationInfo, setPaginationInfo] = useState({
+    currentPage: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 0,
+  });
   const [checkInFilters, setCheckInFilters] = useState({
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
@@ -84,11 +91,27 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
         startDate: today,
         endDate: today,
       }));
+      setPaginationInfo(prev => ({ ...prev, currentPage: 1 }));
     }
     loadData();
   }, [activeTab]);
 
-  const loadData = async () => {
+  // 监听筛选条件变化，重置页码
+  useEffect(() => {
+    if (activeTab === 'checkIns') {
+      setPaginationInfo(prev => ({ ...prev, currentPage: 1 }));
+      loadData();
+    }
+  }, [checkInFilters.startDate, checkInFilters.endDate, checkInFilters.userId]);
+
+  // 监听分页变化
+  useEffect(() => {
+    if (activeTab === 'checkIns' && paginationInfo.currentPage > 1) {
+      loadData();
+    }
+  }, [paginationInfo.currentPage, paginationInfo.pageSize]);
+
+  const loadData = useCallback(async () => {
     try {
       if (activeTab === 'users') {
         const data = await adminAPI.getAllUsers();
@@ -104,17 +127,28 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
         setTimeRules(rulesData);
         setActionTypes(typesData);
       } else if (activeTab === 'checkIns') {
-        const [checkInsData, usersData] = await Promise.all([
-          statisticsAPI.getAllCheckIns(checkInFilters.startDate, checkInFilters.endDate),
+        const [paginatedData, usersData] = await Promise.all([
+          statisticsAPI.getPaginatedCheckIns(
+            checkInFilters.startDate,
+            checkInFilters.endDate,
+            paginationInfo.currentPage,
+            paginationInfo.pageSize,
+            checkInFilters.userId === 'all' ? undefined : parseInt(checkInFilters.userId)
+          ),
           adminAPI.getAllUsers(),
         ]);
-        setCheckIns(checkInsData);
+        setCheckIns(paginatedData.data);
+        setPaginationInfo(prev => ({
+          ...prev,
+          totalItems: paginatedData.total,
+          totalPages: paginatedData.total_pages,
+        }));
         setUsers(usersData);
       }
     } catch (error: any) {
       toast.error('加载数据失败');
     }
-  };
+  }, [activeTab, checkInFilters, paginationInfo.currentPage, paginationInfo.pageSize]);
 
   const handleDeleteUser = async (userId: number) => {
     if (!confirm('确定要删除该用户吗？')) return;
@@ -306,19 +340,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     }
   };
 
-  const handleQueryCheckIns = async () => {
-    try {
-      const data = await statisticsAPI.getAllCheckIns(
-        checkInFilters.startDate,
-        checkInFilters.endDate
-      );
-      setCheckIns(data);
-    } catch (error: any) {
-      toast.error('查询失败');
-    }
-  };
-
-  const handleManualCheckIn = async () => {
+  const handleManualCheckIn = useCallback(async () => {
     try {
       const checkTime = `${manualCheckInForm.check_date} ${manualCheckInForm.check_time}:00`;
       await checkinAPI.createManualCheckIn({
@@ -329,11 +351,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
       });
       toast.success('补卡成功');
       setIsManualCheckInModalOpen(false);
-      handleQueryCheckIns();
+      loadData();
     } catch (error: any) {
       toast.error(error || '补卡失败');
     }
-  };
+  }, [manualCheckInForm, loadData]);
 
   const handleEditCheckIn = (checkIn: CheckIn) => {
     setEditingCheckIn(checkIn);
@@ -345,7 +367,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     setIsEditCheckInModalOpen(true);
   };
 
-  const handleSaveEditCheckIn = async () => {
+  const handleSaveEditCheckIn = useCallback(async () => {
     if (!editingCheckIn) return;
     
     try {
@@ -358,23 +380,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
       toast.success('修改成功');
       setIsEditCheckInModalOpen(false);
       setEditingCheckIn(null);
-      handleQueryCheckIns();
+      loadData();
     } catch (error: any) {
       toast.error(error || '修改失败');
     }
-  };
+  }, [editingCheckIn, editCheckInForm, loadData]);
 
-  const getUserName = (userId: number) => {
+  // 使用 useMemo 缓存计算结果，避免不必要的重新计算
+  const getUserName = useCallback((userId: number) => {
     return users.find(u => u.id === userId)?.full_name || '未知';
-  };
+  }, [users]);
 
-  const getActionTypeName = (actionTypeId: number) => {
+  const getActionTypeName = useCallback((actionTypeId: number) => {
     return actionTypes.find(t => t.id === actionTypeId)?.button_text || '未知';
-  };
+  }, [actionTypes]);
 
-  const filteredCheckIns = checkInFilters.userId === 'all' 
-    ? checkIns 
-    : checkIns.filter(c => c.user_id === parseInt(checkInFilters.userId));
+  // 分页相关回调
+  const handlePageChange = useCallback((page: number) => {
+    setPaginationInfo(prev => ({ ...prev, currentPage: page }));
+  }, []);
+
+  const handlePageSizeChange = useCallback((pageSize: number) => {
+    setPaginationInfo(prev => ({ ...prev, pageSize, currentPage: 1 }));
+  }, []);
 
   const generateReport = () => {
     const report = generateMonthlyReport();
@@ -809,15 +837,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                 </div>
 
                 <Button 
-                  variant="primary" 
-                  size="sm" 
-                  onClick={handleQueryCheckIns}
-                >
-                  <span className="text-base">🔍</span>
-                  <span>查询</span>
-                </Button>
-
-                <Button 
                   variant="secondary" 
                   size="sm" 
                   onClick={() => {
@@ -833,6 +852,15 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                 >
                   <span className="text-base">➕</span>
                   <span>补卡</span>
+                </Button>
+
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={loadData}
+                >
+                  <RefreshCw size={16} />
+                  <span>刷新</span>
                 </Button>
               </div>
 
@@ -853,7 +881,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                     </tr>
                   </thead>
                   <tbody className="divide-y dark:divide-gray-700">
-                    {filteredCheckIns.map((checkIn) => (
+                    {checkIns.map((checkIn) => (
                       <tr key={checkIn.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">
                           {getUserName(checkIn.user_id)}
@@ -906,6 +934,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                   </tbody>
                 </table>
               </div>
+
+              {/* 分页组件 */}
+              <Pagination
+                currentPage={paginationInfo.currentPage}
+                totalPages={paginationInfo.totalPages}
+                pageSize={paginationInfo.pageSize}
+                totalItems={paginationInfo.totalItems}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+                pageSizeOptions={[10, 20, 50, 100]}
+              />
             </div>
           )}
 

@@ -149,6 +149,7 @@ fn main() {
             // Statistics commands
             commands::get_user_statistics,
             commands::get_all_check_ins,
+            commands::get_paginated_check_ins,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

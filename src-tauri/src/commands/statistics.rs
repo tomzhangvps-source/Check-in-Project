@@ -12,6 +12,15 @@ pub struct CheckInStatistics {
     pub average_work_minutes: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaginatedCheckIns {
+    pub data: Vec<CheckIn>,
+    pub total: usize,
+    pub page: i32,
+    pub page_size: i32,
+    pub total_pages: i32,
+}
+
 #[tauri::command]
 pub async fn get_user_statistics(
     user_id: i32,
@@ -88,4 +97,63 @@ pub async fn get_all_check_ins(
         .map_err(|e| format!("Failed to get check-ins: {}", e))?;
 
     Ok(check_ins)
+}
+
+#[tauri::command]
+pub async fn get_paginated_check_ins(
+    start_date: Option<String>,
+    end_date: Option<String>,
+    page: i32,
+    page_size: i32,
+    user_id: Option<i32>,
+    db: State<'_, SupabaseClient>,
+) -> Result<PaginatedCheckIns, String> {
+    let mut params = vec![("order", "check_time.desc")];
+    
+    let start_filter;
+    let end_filter;
+    let user_filter;
+    
+    if let Some(start) = &start_date {
+        start_filter = format!("gte.{}T00:00:00", start);
+        params.push(("check_time", &start_filter));
+    }
+    
+    if let Some(end) = &end_date {
+        end_filter = format!("lte.{}T23:59:59", end);
+        params.push(("check_time", &end_filter));
+    }
+    
+    if let Some(uid) = user_id {
+        user_filter = format!("eq.{}", uid);
+        params.push(("user_id", &user_filter));
+    }
+
+    // 先获取总数
+    let all_check_ins: Vec<CheckIn> = db
+        .get("check_ins", Some(params.clone()))
+        .await
+        .map_err(|e| format!("Failed to get check-ins: {}", e))?;
+    
+    let total = all_check_ins.len();
+    let total_pages = ((total as f32) / (page_size as f32)).ceil() as i32;
+    
+    // 计算偏移量
+    let offset = (page - 1) * page_size;
+    let limit = page_size;
+    
+    // 手动分页（因为 Supabase REST API 的分页参数）
+    let data: Vec<CheckIn> = all_check_ins
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .collect();
+
+    Ok(PaginatedCheckIns {
+        data,
+        total,
+        page,
+        page_size,
+        total_pages,
+    })
 }

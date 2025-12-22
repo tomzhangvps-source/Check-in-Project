@@ -9,7 +9,39 @@ import type {
   CheckInRequest,
   TimeRule,
   CheckInStatistics,
+  PaginatedCheckIns,
 } from '../types';
+import { useCacheStore } from '../store/cacheStore';
+
+// Cache-aware API wrapper
+const cachedInvoke = async <T>(
+  command: string,
+  args?: any,
+  cacheKey?: 'actionTypes' | 'timeRules' | 'users'
+): Promise<T> => {
+  // 如果有缓存键，尝试从缓存获取
+  if (cacheKey) {
+    const cache = useCacheStore.getState();
+    const getCacheMethod = `get${cacheKey.charAt(0).toUpperCase() + cacheKey.slice(1)}` as keyof typeof cache;
+    const cachedData = (cache[getCacheMethod] as Function)();
+    
+    if (cachedData) {
+      return cachedData as T;
+    }
+  }
+
+  // 从 API 获取数据
+  const data = await invoke<T>(command, args);
+
+  // 如果有缓存键，保存到缓存
+  if (cacheKey) {
+    const cache = useCacheStore.getState();
+    const setCacheMethod = `set${cacheKey.charAt(0).toUpperCase() + cacheKey.slice(1)}` as keyof typeof cache;
+    (cache[setCacheMethod] as Function)(data);
+  }
+
+  return data;
+};
 
 // Auth APIs
 export const authAPI = {
@@ -38,49 +70,65 @@ export const checkinAPI = {
     invoke<CheckIn[]>('get_today_check_ins', { userId }),
   
   getActionTypes: () => 
-    invoke<ActionType[]>('get_action_types'),
+    cachedInvoke<ActionType[]>('get_action_types', undefined, 'actionTypes'),
   
   getTimeRules: () => 
-    invoke<TimeRule[]>('get_time_rules'),
+    cachedInvoke<TimeRule[]>('get_time_rules', undefined, 'timeRules'),
 };
 
 // Admin APIs
 export const adminAPI = {
   // Users
   getAllUsers: () => 
-    invoke<User[]>('get_all_users'),
+    cachedInvoke<User[]>('get_all_users', undefined, 'users'),
   
-  updateUserAdminStatus: (userId: number, isAdmin: boolean) => 
-    invoke('update_user_admin_status', { userId, isAdmin }),
+  updateUserAdminStatus: (userId: number, isAdmin: boolean) => {
+    useCacheStore.getState().invalidateUsers();
+    return invoke('update_user_admin_status', { userId, isAdmin });
+  },
   
-  deleteUser: (userId: number) => 
-    invoke('delete_user', { userId }),
+  deleteUser: (userId: number) => {
+    useCacheStore.getState().invalidateUsers();
+    return invoke('delete_user', { userId });
+  },
   
   // Action types
   getAllActionTypes: () => 
-    invoke<ActionType[]>('get_all_action_types'),
+    cachedInvoke<ActionType[]>('get_all_action_types', undefined, 'actionTypes'),
   
-  createActionType: (request: any) => 
-    invoke<ActionType>('create_action_type', { request }),
+  createActionType: (request: any) => {
+    useCacheStore.getState().invalidateActionTypes();
+    return invoke<ActionType>('create_action_type', { request });
+  },
   
-  updateActionType: (request: any) => 
-    invoke('update_action_type', { request }),
+  updateActionType: (request: any) => {
+    useCacheStore.getState().invalidateActionTypes();
+    return invoke('update_action_type', { request });
+  },
   
-  deleteActionType: (actionTypeId: number) => 
-    invoke('delete_action_type', { actionTypeId }),
+  deleteActionType: (actionTypeId: number) => {
+    useCacheStore.getState().invalidateActionTypes();
+    return invoke('delete_action_type', { actionTypeId });
+  },
   
   // Time rules
   getAllTimeRules: () => 
-    invoke<TimeRule[]>('get_all_time_rules'),
+    cachedInvoke<TimeRule[]>('get_all_time_rules', undefined, 'timeRules'),
   
-  createTimeRule: (request: any) => 
-    invoke<TimeRule>('create_time_rule', { request }),
+  createTimeRule: (request: any) => {
+    useCacheStore.getState().invalidateTimeRules();
+    return invoke<TimeRule>('create_time_rule', { request });
+  },
   
-  updateTimeRule: (request: any) => 
-    invoke('update_time_rule', { request }),
+  updateTimeRule: (request: any) => {
+    useCacheStore.getState().invalidateTimeRules();
+    return invoke('update_time_rule', { request });
+  },
   
-  deleteTimeRule: (ruleId: number) => 
-    invoke('delete_time_rule', { ruleId }),
+  deleteTimeRule: (ruleId: number) => {
+    useCacheStore.getState().invalidateTimeRules();
+    return invoke('delete_time_rule', { ruleId });
+  },
 };
 
 // Statistics APIs
@@ -90,4 +138,19 @@ export const statisticsAPI = {
   
   getAllCheckIns: (startDate?: string, endDate?: string) => 
     invoke<CheckIn[]>('get_all_check_ins', { startDate, endDate }),
+  
+  getPaginatedCheckIns: (
+    startDate: string | undefined,
+    endDate: string | undefined,
+    page: number,
+    pageSize: number,
+    userId?: number
+  ) => 
+    invoke<PaginatedCheckIns>('get_paginated_check_ins', { 
+      startDate, 
+      endDate, 
+      page, 
+      pageSize,
+      userId 
+    }),
 };
