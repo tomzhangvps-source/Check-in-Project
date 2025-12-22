@@ -17,6 +17,15 @@
         "all": false,
         "open": true
       },
+      "dialog": {
+        "all": false,
+        "save": true
+      },
+      "fs": {
+        "all": false,
+        "writeBinaryFile": true,
+        "scope": ["$DOWNLOAD/*", "$DOCUMENT/*", "$DESKTOP/*", "$HOME/*"]
+      },
       "window": {
         "all": false,
         "close": true,

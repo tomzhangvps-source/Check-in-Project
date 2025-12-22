@@ -9,6 +9,8 @@ import { X, Plus, RefreshCw, Download, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { User, ActionType, TimeRule, CheckIn } from '../types';
 import * as XLSX from 'xlsx';
+import { save } from '@tauri-apps/api/dialog';
+import { writeBinaryFile } from '@tauri-apps/api/fs';
 
 interface AdminPageProps {
   isOpen: boolean;
@@ -444,7 +446,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     toast.success('报表已下载');
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     try {
       const reportData = generateMonthlyReport();
       
@@ -491,19 +493,25 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
       ws_summary['!cols'] = [{ wch: 15 }, { wch: 30 }];
       XLSX.utils.book_append_sheet(wb, ws_summary, '报表概要');
 
-      // 使用浏览器下载（兼容方案）
+      // 生成二进制数据
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `考勤报表_${reportMonth}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toast.success('Excel 导出成功！');
+
+      // 使用 Tauri 的保存对话框
+      const filePath = await save({
+        defaultPath: `考勤报表_${reportMonth}.xlsx`,
+        filters: [{
+          name: 'Excel 文件',
+          extensions: ['xlsx']
+        }]
+      });
+
+      if (filePath) {
+        // 保存文件
+        await writeBinaryFile(filePath, new Uint8Array(wbout));
+        toast.success('Excel 导出成功！');
+      } else {
+        toast.error('已取消导出');
+      }
     } catch (error: any) {
       console.error('Excel导出失败:', error);
       toast.error('Excel 导出失败: ' + (error.message || error));
