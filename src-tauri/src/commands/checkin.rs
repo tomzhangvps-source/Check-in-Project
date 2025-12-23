@@ -126,9 +126,17 @@ pub async fn create_check_in(
         }
         2 => {
             // 主进程结束（下班）
-            if !has_main_start {
-                return Err("未找到今日上班记录，请先打上班卡".to_string());
+            // 支持跨日班次:检查是否有ongoing状态的上班记录,而不是只检查今天的记录
+            let has_main_ongoing = ongoing.iter().any(|c| {
+                all_action_types
+                    .iter()
+                    .any(|at| at.id == c.action_type_id && at.action_role == 1)
+            });
+            
+            if !has_main_ongoing {
+                return Err("未找到进行中的上班记录，请先打上班卡".to_string());
             }
+            
             if !ongoing.is_empty() {
                 // 检查是否有临时事件未完成
                 let ongoing_action_ids: Vec<i32> = ongoing.iter().map(|c| c.action_type_id).collect();
@@ -138,15 +146,6 @@ pub async fn create_check_in(
                 
                 if has_temp_ongoing {
                     return Err("检测到有未完成的临时事件（如上厕所、午餐等），请先打回座".to_string());
-                }
-                
-                // 如果是主进程的ongoing，可以下班
-                let has_main_ongoing = all_action_types
-                    .iter()
-                    .any(|at| at.action_role == 1 && ongoing_action_ids.contains(&at.id));
-                
-                if !has_main_ongoing {
-                    return Err("检测到有未完成的打卡记录，请先完成当前任务".to_string());
                 }
             }
         }
@@ -217,6 +216,23 @@ pub async fn create_check_in(
         _ => "ongoing",
     };
 
+    // 预先查询所有可能需要的未配对的开始记录(支持跨日班次)
+    let all_unpaired_starts: Vec<CheckIn> = if is_end_action {
+        db.get(
+            "check_ins",
+            Some(vec![
+                ("user_id", &format!("eq.{}", request.user_id)),
+                ("status", "eq.ongoing"),
+                ("check_time", &format!("lt.{}", check_time_str)),
+                ("order", "check_time.desc"),
+            ]),
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     // Check for pair
     let mut pair_check_in_id = None;
     let mut duration_minutes_value = None;
@@ -229,9 +245,9 @@ pub async fn create_check_in(
         // 首先从ongoing记录中查找
         if !ongoing.is_empty() {
             start_checkin_opt = Some(&ongoing[0]);
-        } else {
-            // 如果没有ongoing记录，从今天的记录中查找最近的未配对的开始记录
-            // 这种情况可能发生在补卡或者系统重启后
+        } else if !all_unpaired_starts.is_empty() {
+            // 如果没有ongoing记录，从查询到的所有历史记录中查找最近的未配对的开始记录
+            // 支持跨日班次:不限于今天,查找所有未完成的记录
             let target_start_role = if action_type.action_role == 2 {
                 1 // 下班对应上班
             } else if action_type.action_role == 4 {
@@ -241,12 +257,10 @@ pub async fn create_check_in(
             };
             
             if target_start_role > 0 {
-                // 查找今天同类型的未配对的开始记录
-                for checkin in today_main_checkins.iter().rev() {
+                // 查找最近的符合条件的记录
+                for checkin in all_unpaired_starts.iter() {
                     if let Some(at) = all_action_types.iter().find(|at| at.id == checkin.action_type_id) {
-                        if at.action_role == target_start_role 
-                            && checkin.pair_check_in_id.is_none()
-                            && checkin.check_time < check_time_str {
+                        if at.action_role == target_start_role && checkin.pair_check_in_id.is_none() {
                             start_checkin_opt = Some(checkin);
                             break;
                         }
@@ -354,7 +368,8 @@ pub async fn get_today_check_ins(
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
-    let check_ins: Vec<CheckIn> = db
+    // 获取今天的所有打卡记录
+    let today_check_ins: Vec<CheckIn> = db
         .get(
             "check_ins",
             Some(vec![
@@ -364,9 +379,28 @@ pub async fn get_today_check_ins(
             ]),
         )
         .await
-        .map_err(|e| format!("Failed to get check-ins: {}", e))?;
+        .map_err(|e| format!("Failed to get today's check-ins: {}", e))?;
 
-    Ok(check_ins)
+    // 获取今天之前的所有ongoing记录（支持跨日班次）
+    let ongoing_check_ins: Vec<CheckIn> = db
+        .get(
+            "check_ins",
+            Some(vec![
+                ("user_id", &format!("eq.{}", user_id)),
+                ("status", "eq.ongoing"),
+                ("check_time", &format!("lt.{}", today_start)),
+                ("order", "check_time.desc"),
+            ]),
+        )
+        .await
+        .map_err(|e| format!("Failed to get ongoing check-ins: {}", e))?;
+
+    // 合并两个列表，ongoing记录排在前面（因为可能是昨天的上班记录）
+    let mut all_check_ins = Vec::new();
+    all_check_ins.extend(ongoing_check_ins);
+    all_check_ins.extend(today_check_ins);
+
+    Ok(all_check_ins)
 }
 
 #[tauri::command]
