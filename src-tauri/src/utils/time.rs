@@ -15,9 +15,27 @@ pub fn format_time(dt: &DateTime<Tz>) -> String {
 /// Parse time string to datetime
 pub fn parse_time(time_str: &str, timezone: &str) -> Option<DateTime<Tz>> {
     let tz: Tz = timezone.parse().ok()?;
-    NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
-        .ok()
-        .and_then(|naive| tz.from_local_datetime(&naive).single())
+    
+    // Trim the string to handle any whitespace
+    let trimmed = time_str.trim();
+    
+    // Try multiple common timestamp formats
+    let formats = vec![
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S%.f",
+    ];
+    
+    for format in formats {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, format) {
+            if let Some(dt) = tz.from_local_datetime(&naive).single() {
+                return Some(dt);
+            }
+        }
+    }
+    
+    None
 }
 
 /// Check if time is late (strict - no grace period)

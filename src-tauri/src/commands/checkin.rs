@@ -260,9 +260,11 @@ pub async fn create_check_in(
             pair_check_in_id = Some(start_checkin.id);
 
             // Calculate duration
+            println!("DEBUG: Parsing start_checkin.check_time: {}", start_checkin.check_time);
             if let Some(start_time) = parse_time(&start_checkin.check_time, timezone) {
                 let duration = calculate_duration(&start_time, &check_time);
                 duration_minutes_value = Some(duration);
+                println!("DEBUG: Calculated duration: {} minutes", duration);
 
                 // 检查是否早退或超时
                 if action_type.action_role == 2 {
@@ -295,6 +297,8 @@ pub async fn create_check_in(
                         }
                     }
                 }
+            } else {
+                println!("ERROR: Failed to parse start_time: {}", start_checkin.check_time);
             }
         }
     }
