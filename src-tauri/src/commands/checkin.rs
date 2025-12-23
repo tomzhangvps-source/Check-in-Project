@@ -222,42 +222,76 @@ pub async fn create_check_in(
     let mut duration_minutes_value = None;
     let mut is_early_leave_flag = false;
     
-    if is_end_action && !ongoing.is_empty() {
-        let start_checkin = &ongoing[0];
-        pair_check_in_id = Some(start_checkin.id);
-
-        // Calculate duration
-        if let Some(start_time) = parse_time(&start_checkin.check_time, timezone) {
-            let duration = calculate_duration(&start_time, &check_time);
-            duration_minutes_value = Some(duration);
-
-            // 检查是否早退或超时
-            if action_type.action_role == 2 {
-                // 主进程结束（下班）：检查是否早退
-                if let Some(rule) = time_rule {
-                    if let Some(ref expected_end) = rule.expected_end_time {
-                        is_early_leave_flag = is_early_leave(&start_time, &check_time, expected_end, timezone);
+    if is_end_action {
+        // 查找配对的开始记录
+        let mut start_checkin_opt: Option<&CheckIn> = None;
+        
+        // 首先从ongoing记录中查找
+        if !ongoing.is_empty() {
+            start_checkin_opt = Some(&ongoing[0]);
+        } else {
+            // 如果没有ongoing记录，从今天的记录中查找最近的未配对的开始记录
+            // 这种情况可能发生在补卡或者系统重启后
+            let target_start_role = if action_type.action_role == 2 {
+                1 // 下班对应上班
+            } else if action_type.action_role == 4 {
+                3 // 回座对应临时事件开始
+            } else {
+                0
+            };
+            
+            if target_start_role > 0 {
+                // 查找今天同类型的未配对的开始记录
+                for checkin in today_main_checkins.iter().rev() {
+                    if let Some(at) = all_action_types.iter().find(|at| at.id == checkin.action_type_id) {
+                        if at.action_role == target_start_role 
+                            && checkin.pair_check_in_id.is_none()
+                            && checkin.check_time < check_time_str {
+                            start_checkin_opt = Some(checkin);
+                            break;
+                        }
                     }
                 }
-            } else if action_type.action_role == 4 {
-                // 临时事件结束（回座）：检查是否超时
-                // 需要获取临时事件开始时的time_rule
-                let temp_event_time_rules: Vec<TimeRule> = db
-                    .get(
-                        "time_rules",
-                        Some(vec![
-                            ("action_type_id", &format!("eq.{}", start_checkin.action_type_id)),
-                            ("is_active", "eq.true"),
-                        ]),
-                    )
-                    .await
-                    .unwrap_or_default();
+            }
+        }
+        
+        // 如果找到了配对的开始记录，计算时长
+        if let Some(start_checkin) = start_checkin_opt {
+            pair_check_in_id = Some(start_checkin.id);
 
-                if let Some(temp_rule) = temp_event_time_rules.first() {
-                    if let Some(max_duration) = temp_rule.max_duration_minutes {
-                        // 超过最大允许时长，标记为迟到（超时）
-                        if duration > max_duration {
-                            is_late_flag = true;
+            // Calculate duration
+            if let Some(start_time) = parse_time(&start_checkin.check_time, timezone) {
+                let duration = calculate_duration(&start_time, &check_time);
+                duration_minutes_value = Some(duration);
+
+                // 检查是否早退或超时
+                if action_type.action_role == 2 {
+                    // 主进程结束（下班）：检查是否早退
+                    if let Some(rule) = time_rule {
+                        if let Some(ref expected_end) = rule.expected_end_time {
+                            is_early_leave_flag = is_early_leave(&start_time, &check_time, expected_end, timezone);
+                        }
+                    }
+                } else if action_type.action_role == 4 {
+                    // 临时事件结束（回座）：检查是否超时
+                    // 需要获取临时事件开始时的time_rule
+                    let temp_event_time_rules: Vec<TimeRule> = db
+                        .get(
+                            "time_rules",
+                            Some(vec![
+                                ("action_type_id", &format!("eq.{}", start_checkin.action_type_id)),
+                                ("is_active", "eq.true"),
+                            ]),
+                        )
+                        .await
+                        .unwrap_or_default();
+
+                    if let Some(temp_rule) = temp_event_time_rules.first() {
+                        if let Some(max_duration) = temp_rule.max_duration_minutes {
+                            // 超过最大允许时长，标记为迟到（超时）
+                            if duration > max_duration {
+                                is_late_flag = true;
+                            }
                         }
                     }
                 }
