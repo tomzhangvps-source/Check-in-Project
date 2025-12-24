@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, NaiveTime, TimeZone, Utc, Datelike, Timelike, Duration};
+use chrono::{DateTime, NaiveDateTime, NaiveTime, TimeZone, Utc, Datelike, Timelike};
 use chrono_tz::Tz;
 
 /// Get current time in company timezone
