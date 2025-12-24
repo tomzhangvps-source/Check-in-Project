@@ -66,8 +66,11 @@ pub fn is_early_leave(
     if let Ok(expected_end) = NaiveTime::parse_from_str(expected_end_time, "%H:%M:%S") {
         let tz: Tz = timezone.parse().unwrap_or(chrono_tz::Asia::Shanghai);
         
-        // Calculate expected end datetime
-        let mut expected_end_dt = tz
+        // Calculate expected end datetime using end_time's date
+        // This works for both normal shifts and cross-day shifts:
+        // - Normal shift (07:00-21:30): end_time is same day, compare with same day's expected time
+        // - Cross-day shift (12:00-03:00): end_time is next day, compare with next day's expected time
+        let expected_end_dt = tz
             .with_ymd_and_hms(
                 end_time.year(),
                 end_time.month(),
@@ -79,13 +82,7 @@ pub fn is_early_leave(
             .single()
             .unwrap();
 
-        // Auto-detect cross-day: if expected_end_time < start_time, add one day
-        let start_naive = start_time.time();
-        if expected_end < start_naive {
-            expected_end_dt = expected_end_dt + Duration::days(1);
-        }
-
-        // Early leave if checked out before expected end time
+        // Early leave if checked out before expected end time (same day comparison)
         return end_time < &expected_end_dt;
     }
     false
