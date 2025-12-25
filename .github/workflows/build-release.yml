@@ -27,11 +27,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
-      - name: Install dependencies (macOS)
+      - name: Install system dependencies (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
           brew install create-dmg || true
@@ -45,7 +48,15 @@ jobs:
       - name: Build Tauri app
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-        run: npm run tauri build
+        run: |
+          echo "开始构建 Tauri 应用..."
+          npm run tauri build || (echo "构建失败，查看详细错误：" && exit 1)
+
+      - name: List build artifacts
+        run: |
+          echo "查找构建产物..."
+          find src-tauri/target/release/bundle -type f 2>/dev/null || echo "未找到构建产物"
+          ls -la src-tauri/target/release/bundle/ 2>/dev/null || echo "bundle 目录不存在"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -57,6 +68,7 @@ jobs:
             src-tauri/target/release/bundle/**/*.exe
             src-tauri/target/release/bundle/**/*.tar.gz
             src-tauri/target/release/bundle/**/*.AppImage
+          if-no-files-found: warn
 
   release:
     needs: build
