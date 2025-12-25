@@ -31,3 +31,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Tauri updater 私钥（不要提交！）
+*.key
+~/.tauri/
