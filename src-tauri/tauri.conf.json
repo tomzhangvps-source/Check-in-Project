@@ -50,8 +50,7 @@
         "icons/icon.ico"
       ],
       "identifier": "com.checkin.system",
-      "targets": "all",
-      "macOSPrivateFramework": false
+      "targets": "all"
     },
     "security": {
       "csp": null
