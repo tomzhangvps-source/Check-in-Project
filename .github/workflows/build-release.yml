@@ -49,21 +49,35 @@ jobs:
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ""  # 空密码（因为我们生成密钥时没有设置密码）
+        shell: bash
         run: |
           echo "开始构建 Tauri 应用..."
           echo "平台: ${{ matrix.platform }}"
           npm run tauri build 2>&1 | tee build.log || (echo "构建失败，查看日志：" && cat build.log && exit 1)
 
-      - name: List build artifacts
+      - name: List build artifacts (macOS)
+        if: matrix.platform == 'macos-latest'
         run: |
           echo "查找构建产物..."
           find src-tauri/target/release/bundle -type f 2>/dev/null || echo "未找到构建产物"
-          if [ "${{ matrix.platform }}" == "macos-latest" ]; then
-            ls -la src-tauri/target/release/bundle/macos/ 2>/dev/null || echo "macOS bundle 目录不存在"
-          elif [ "${{ matrix.platform }}" == "windows-latest" ]; then
-            ls -la src-tauri/target/release/bundle/msi/ 2>/dev/null || echo "Windows bundle 目录不存在"
-            ls -la src-tauri/target/release/bundle/nsis/ 2>/dev/null || echo "NSIS bundle 目录不存在"
-          fi
+          ls -la src-tauri/target/release/bundle/macos/ 2>/dev/null || echo "macOS bundle 目录不存在"
+
+      - name: List build artifacts (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "查找构建产物..."
+          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName
+          if (Test-Path "src-tauri/target/release/bundle/msi") {
+            Get-ChildItem "src-tauri/target/release/bundle/msi"
+          } else {
+            Write-Host "MSI bundle 目录不存在"
+          }
+          if (Test-Path "src-tauri/target/release/bundle/nsis") {
+            Get-ChildItem "src-tauri/target/release/bundle/nsis"
+          } else {
+            Write-Host "NSIS bundle 目录不存在"
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
