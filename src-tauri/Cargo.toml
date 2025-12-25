@@ -1,6 +1,6 @@
 [package]
 name = "checkin-system"
-version = "1.0.0"
+version = "1.0.1"
 description = "员工打卡系统"
 authors = ["Your Name"]
 license = ""

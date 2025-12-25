@@ -4,7 +4,8 @@ import { useCheckInStore } from '../store/checkinStore';
 import { useUIStore } from '../store/uiStore';
 import { checkinAPI } from '../services/api';
 import { Button } from '../components/common/Button';
-import { LogOut, RefreshCw, Settings, Clock, Calendar, Coffee, Briefcase, Moon, Sun } from 'lucide-react';
+import { LogOut, RefreshCw, Settings, Clock, Calendar, Coffee, Briefcase, Moon, Sun, Download } from 'lucide-react';
+import { checkUpdate, installUpdate } from '@tauri-apps/api/updater';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
@@ -77,6 +78,36 @@ export const CheckInPage: React.FC = () => {
   const handleLogout = () => {
     logout();
     setCurrentPage('login');
+  };
+
+  const handleCheckUpdate = async () => {
+    try {
+      toast.loading('正在检查更新...', { id: 'check-update' });
+      const { shouldUpdate, manifest } = await checkUpdate();
+      
+      if (shouldUpdate) {
+        toast.dismiss('check-update');
+        const confirmed = window.confirm(
+          `发现新版本 ${manifest?.version}！\n\n更新内容：${manifest?.body || '暂无说明'}\n\n是否立即更新？`
+        );
+        if (confirmed) {
+          toast.loading('正在下载更新...', { id: 'install-update' });
+          await installUpdate();
+          toast.dismiss('install-update');
+          toast.success('更新完成，即将重启应用...');
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
+      } else {
+        toast.dismiss('check-update');
+        toast.success('已是最新版本');
+      }
+    } catch (error: any) {
+      toast.dismiss('check-update');
+      toast.error('检查更新失败: ' + (error.message || '未知错误'));
+      console.error('检查更新失败:', error);
+    }
   };
 
   const openAdminWindow = async () => {
@@ -161,6 +192,10 @@ export const CheckInPage: React.FC = () => {
             
             {/* 右侧：按钮组 */}
             <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={handleCheckUpdate}>
+                <Download size={14} />
+                <span>检查更新</span>
+              </Button>
               {user?.is_admin && (
                 <Button
                   variant="secondary"
