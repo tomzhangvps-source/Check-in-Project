@@ -50,7 +50,8 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Build Tauri app
+      - name: Build Tauri app (macOS/Linux)
+        if: matrix.platform != 'windows-latest'
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ""  # 空密码（因为我们生成密钥时没有设置密码）
@@ -59,6 +60,16 @@ jobs:
           echo "开始构建 Tauri 应用..."
           echo "平台: ${{ matrix.platform }}"
           npm run tauri build 2>&1 | tee build.log || (echo "构建失败，查看日志：" && cat build.log && exit 1)
+
+      - name: Build Tauri app (Windows)
+        if: matrix.platform == 'windows-latest'
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ""  # 空密码（因为我们生成密钥时没有设置密码）
+        run: |
+          echo "开始构建 Tauri 应用..."
+          echo "平台: windows-latest"
+          npm run tauri build
 
       - name: List build artifacts (macOS)
         if: matrix.platform == 'macos-latest'
@@ -83,6 +94,13 @@ jobs:
           } else {
             Write-Host "NSIS bundle 目录不存在"
           }
+
+      - name: Fix macOS app quarantine (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "移除 macOS 隔离属性..."
+          find src-tauri/target/release/bundle -name "*.app" -exec xattr -cr {} \; || true
+          find src-tauri/target/release/bundle -name "*.dmg" -exec xattr -cr {} \; || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
