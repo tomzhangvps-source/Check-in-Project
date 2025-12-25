@@ -48,6 +48,7 @@ jobs:
       - name: Build Tauri app
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ""  # 空密码（因为我们生成密钥时没有设置密码）
         run: |
           echo "开始构建 Tauri 应用..."
           echo "平台: ${{ matrix.platform }}"
