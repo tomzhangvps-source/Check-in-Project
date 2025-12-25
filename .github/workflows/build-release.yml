@@ -39,6 +39,11 @@ jobs:
         run: |
           brew install create-dmg || true
 
+      - name: Install Windows build tools
+        if: matrix.platform == 'windows-latest'
+        run: |
+          echo "Windows 构建工具已预装在 GitHub Actions runner 中"
+
       - name: Install frontend dependencies
         run: npm ci
 
