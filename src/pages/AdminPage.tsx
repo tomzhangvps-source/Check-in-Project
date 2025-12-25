@@ -81,6 +81,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
 
   // Reports
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
 
   useEffect(() => {
     // 切换到打卡记录标签时，自动更新日期为今天
@@ -93,8 +95,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
       }));
       setPaginationInfo(prev => ({ ...prev, currentPage: 1 }));
     }
-    loadData();
+    // 切换到报表标签时，加载该月份的数据
+    if (activeTab === 'reports') {
+      loadReportData();
+    } else {
+      loadData();
+    }
   }, [activeTab]);
+
+  // 监听报表月份变化，自动加载数据
+  useEffect(() => {
+    if (activeTab === 'reports') {
+      loadReportData();
+    }
+  }, [reportMonth]);
 
   // 监听筛选条件变化，重置页码
   useEffect(() => {
@@ -149,6 +163,59 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
       toast.error('加载数据失败');
     }
   }, [activeTab, checkInFilters, paginationInfo.currentPage, paginationInfo.pageSize]);
+
+  // 生成月度报表数据（不依赖状态，直接使用传入的数据）
+  const generateMonthlyReportData = (usersList: User[], checkInsList: CheckIn[]) => {
+    return usersList.map(user => {
+      const userCheckIns = checkInsList.filter(c => c.user_id === user.id);
+      const workDays = new Set(userCheckIns.filter(c => c.action_type_id === 1).map(c => c.check_time.split('T')[0])).size;
+      const lateCount = userCheckIns.filter(c => c.is_late).length;
+      
+      return {
+        name: user.full_name,
+        workDays,
+        lateCount,
+        onTimeCount: workDays - lateCount,
+      };
+    });
+  };
+
+  // 加载报表数据
+  const loadReportData = useCallback(async () => {
+    setIsLoadingReport(true);
+    try {
+      // 计算该月份的开始和结束日期
+      const [year, month] = reportMonth.split('-').map(Number);
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      
+      // 更新筛选条件用于显示
+      setCheckInFilters(prev => ({
+        ...prev,
+        startDate,
+        endDate,
+      }));
+
+      // 加载该月份的所有打卡记录和用户数据
+      const [allCheckInsData, usersData] = await Promise.all([
+        statisticsAPI.getPaginatedCheckIns(startDate, endDate, 1, 10000), // 获取该月所有数据
+        adminAPI.getAllUsers(),
+      ]);
+      
+      setCheckIns(allCheckInsData.data);
+      setUsers(usersData);
+      
+      // 生成报表数据
+      const report = generateMonthlyReportData(usersData, allCheckInsData.data);
+      setReportData(report);
+    } catch (error: any) {
+      toast.error('加载报表数据失败: ' + (error.message || error));
+      console.error('加载报表数据失败:', error);
+    } finally {
+      setIsLoadingReport(false);
+    }
+  }, [reportMonth]);
 
   const handleDeleteUser = async (userId: number) => {
     if (!confirm('确定要删除该用户吗？')) return;
@@ -404,27 +471,28 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
     setPaginationInfo(prev => ({ ...prev, pageSize, currentPage: 1 }));
   }, []);
 
-  const generateReport = () => {
-    const report = generateMonthlyReport();
-    downloadReport(report);
+  // 生成报表（用于显示）
+  const generateMonthlyReport = () => {
+    if (reportData.length > 0) {
+      return reportData;
+    }
+    // 如果没有报表数据，使用当前状态生成
+    return generateMonthlyReportData(users, checkIns);
   };
 
-  const generateMonthlyReport = () => {
-    // 生成月度报表数据
-    const reportData = users.map(user => {
-      const userCheckIns = checkIns.filter(c => c.user_id === user.id);
-      const workDays = new Set(userCheckIns.filter(c => c.action_type_id === 1).map(c => c.check_time.split('T')[0])).size;
-      const lateCount = userCheckIns.filter(c => c.is_late).length;
-      
-      return {
-        name: user.full_name,
-        workDays,
-        lateCount,
-        onTimeCount: workDays - lateCount,
-      };
-    });
-
-    return reportData;
+  // 生成并下载报表
+  const generateReport = async () => {
+    try {
+      // 先确保数据已加载
+      if (reportData.length === 0 || checkIns.length === 0) {
+        await loadReportData();
+      }
+      // 使用最新的报表数据下载
+      const currentReport = reportData.length > 0 ? reportData : generateMonthlyReport();
+      downloadReport(currentReport);
+    } catch (error: any) {
+      toast.error('生成报表失败: ' + (error.message || error));
+    }
   };
 
   const downloadReport = (reportData: any[]) => {
@@ -445,8 +513,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
 
   const copyReport = () => {
     try {
+      const currentReport = reportData.length > 0 ? reportData : generateMonthlyReport();
       const text = `📊 考勤统计报表\n统计月份: ${reportMonth}\n统计时间: ${checkInFilters.startDate} 至 ${checkInFilters.endDate}\n\n` +
-        generateMonthlyReport().map((data, idx) => 
+        currentReport.map((data, idx) => 
           `${idx + 1}. ${data.name}\n   出勤天数: ${data.workDays} 天\n   总工作时长: 0 小时 0 分钟\n   迟到次数: ${data.lateCount} 次\n   早退次数: 0 次\n   旷工次数: 0 次`
         ).join('\n\n');
       
@@ -978,24 +1047,42 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
                   variant="primary" 
                   size="sm" 
                   onClick={generateReport}
+                  disabled={isLoadingReport}
                 >
                   <FileText size={16} />
-                  <span>生成报表</span>
+                  <span>{isLoadingReport ? '生成中...' : '生成报表'}</span>
                 </Button>
 
                 <Button 
                   variant="secondary" 
                   size="sm" 
                   onClick={copyReport}
+                  disabled={isLoadingReport || reportData.length === 0}
                 >
                   <Copy size={16} />
                   <span>复制报表</span>
                 </Button>
+
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={loadReportData}
+                  disabled={isLoadingReport}
+                >
+                  <RefreshCw size={16} className={isLoadingReport ? 'animate-spin' : ''} />
+                  <span>刷新</span>
+                </Button>
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200">
-                  {`📊 考勤统计报表
+              {isLoadingReport ? (
+                <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg text-center">
+                  <RefreshCw size={24} className="animate-spin mx-auto text-gray-500 dark:text-gray-400" />
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">正在加载报表数据...</p>
+                </div>
+              ) : (
+                <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200">
+                    {`📊 考勤统计报表
 统计月份: ${reportMonth}
 统计时间: ${checkInFilters.startDate} 至 ${checkInFilters.endDate}
 
@@ -1007,8 +1094,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ isOpen, onClose, isStandal
    早退次数: 0 次
    旷工次数: 0 次`
 ).join('\n\n')}
-                </pre>
-              </div>
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </Card>
