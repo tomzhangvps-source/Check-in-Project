@@ -66,10 +66,12 @@ jobs:
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ""  # 空密码（因为我们生成密钥时没有设置密码）
+        shell: cmd
         run: |
-          echo "开始构建 Tauri 应用..."
-          echo "平台: windows-latest"
-          npm run tauri build
+          echo 开始构建 Tauri 应用...
+          echo 平台: windows-latest
+          call npm run tauri build
+          if errorlevel 1 exit /b 1
 
       - name: List build artifacts (macOS)
         if: matrix.platform == 'macos-latest'
@@ -101,6 +103,14 @@ jobs:
           echo "移除 macOS 隔离属性..."
           find src-tauri/target/release/bundle -name "*.app" -exec xattr -cr {} \; || true
           find src-tauri/target/release/bundle -name "*.dmg" -exec xattr -cr {} \; || true
+          echo "移除隔离属性完成"
+          
+      - name: Sign macOS app (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "为 macOS 应用添加临时签名（用于移除隔离属性）..."
+          find src-tauri/target/release/bundle -name "*.app" -exec codesign --force --deep --sign - {} \; || true
+          echo "签名完成"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
