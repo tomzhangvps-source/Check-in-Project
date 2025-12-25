@@ -50,13 +50,19 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         run: |
           echo "开始构建 Tauri 应用..."
-          npm run tauri build || (echo "构建失败，查看详细错误：" && exit 1)
+          echo "平台: ${{ matrix.platform }}"
+          npm run tauri build 2>&1 | tee build.log || (echo "构建失败，查看日志：" && cat build.log && exit 1)
 
       - name: List build artifacts
         run: |
           echo "查找构建产物..."
           find src-tauri/target/release/bundle -type f 2>/dev/null || echo "未找到构建产物"
-          ls -la src-tauri/target/release/bundle/ 2>/dev/null || echo "bundle 目录不存在"
+          if [ "${{ matrix.platform }}" == "macos-latest" ]; then
+            ls -la src-tauri/target/release/bundle/macos/ 2>/dev/null || echo "macOS bundle 目录不存在"
+          elif [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            ls -la src-tauri/target/release/bundle/msi/ 2>/dev/null || echo "Windows bundle 目录不存在"
+            ls -la src-tauri/target/release/bundle/nsis/ 2>/dev/null || echo "NSIS bundle 目录不存在"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -85,7 +91,9 @@ jobs:
           path: artifacts
 
       - name: Display structure of downloaded files
-        run: ls -R artifacts/
+        run: |
+          echo "下载的构建产物："
+          find artifacts -type f || echo "未找到文件"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -95,4 +103,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
