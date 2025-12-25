@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "员工打卡系统"
 authors = ["Your Name"]
 license = ""
-repository = ""
+repository = "https://github.com/tomzhangvps-source/Check-in-Project"
 edition = "2021"
 
 [build-dependencies]
@@ -12,7 +12,7 @@ tauri-build = { version = "1.5", features = [] }
 dotenvy = "0.15"
 
 [dependencies]
-tauri = { version = "1.5", features = [ "dialog-save", "fs-write-file", "window-create", "window-center", "window-maximize", "window-hide", "window-close", "window-unminimize", "window-start-dragging", "window-unmaximize", "window-show", "window-minimize", "shell-open"] }
+tauri = { version = "1.5", features = [ "dialog-save", "fs-write-file", "window-create", "window-center", "window-maximize", "window-hide", "window-close", "window-unminimize", "window-start-dragging", "window-unmaximize", "window-show", "window-minimize", "shell-open", "updater"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
